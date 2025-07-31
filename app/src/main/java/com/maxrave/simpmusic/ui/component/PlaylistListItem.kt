@@ -29,38 +29,43 @@ import com.maxrave.simpmusic.viewModel.UnifiedPlaylist
 fun PlaylistListItem(
     playlist: UnifiedPlaylist,
     onClick: () -> Unit,
-    onMoreClick: (() -> Unit)? = null // Opcional: para el botón de tres puntos
+    onMoreClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 16.dp),
+            .padding(vertical = 8.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // ---> CAMBIO AQUÍ: Carátula más grande
         AsyncImage(
             model = playlist.imageUrl,
             contentDescription = playlist.title,
             modifier = Modifier
-                .size(56.dp)
+                .size(64.dp)
                 .clip(MaterialTheme.shapes.medium),
             contentScale = ContentScale.Crop
         )
 
-        Spacer(modifier = Modifier.width(16.dp))
+        // ---> CAMBIO AQUÍ: Más espacio
+        Spacer(modifier = Modifier.width(20.dp))
 
         Column(modifier = Modifier.weight(1f)) {
+            // ---> CAMBIO AQUÍ: Título más grande y prominente
             Text(
                 text = playlist.title,
-                style = typo.bodyLarge,
+                style = typo.titleSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            // ---> CAMBIO AQUÍ: Subtítulo ligeramente más grande
             Text(
                 text = playlist.subtitle,
                 style = typo.bodyMedium,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 

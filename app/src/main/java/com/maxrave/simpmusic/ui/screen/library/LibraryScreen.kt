@@ -1,13 +1,14 @@
 package com.maxrave.simpmusic.ui.screen.library
 
-import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -26,7 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,67 +73,52 @@ fun LibraryScreen(
     val nowPlaying by viewModel.nowPlayingVideoId.collectAsStateWithLifecycle()
 
     // --- ESTADO DE LA UI ---
-    // Un nuevo estado para saber si mostramos la cuadrícula o la lista
-    var viewMode by remember { mutableStateOf(ViewMode.GRID) }
+    var viewMode by rememberSaveable { mutableStateOf(ViewMode.GRID) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding)
     ) {
-        // --- NUEVO APP BAR PERSONALIZADO ---
+        // --- APP BAR PERSONALIZADO ---
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = stringResource(R.string.library),
                 style = typo.headlineMedium,
+                modifier = Modifier.weight(1f)
             )
-            IconButton(
-                onClick = {
-                    // Cambiamos el modo de vista al hacer clic
-                    viewMode = if (viewMode == ViewMode.GRID) ViewMode.LIST else ViewMode.GRID
-                }
-            ) {
+            IconButton(onClick = { viewMode = if (viewMode == ViewMode.GRID) ViewMode.LIST else ViewMode.GRID }) {
                 Icon(
-                    // El icono cambia según el modo de vista actual
                     imageVector = if (viewMode == ViewMode.GRID) Icons.Default.ViewList else Icons.Default.GridView,
-                    contentDescription = "Change View Mode"
+                    contentDescription = stringResource(R.string.preview)
                 )
             }
         }
 
         // --- CUERPO DE LA PANTALLA ---
-        // Mostramos un layout u otro dependiendo del estado `viewMode`
         when (viewMode) {
-            ViewMode.GRID -> {
-                // Si es GRID, mostramos la LazyVerticalGrid que ya teníamos
-                LibraryGridView(
-                    unifiedPlaylistsState = unifiedPlaylistsState,
-                    downloadedPlaylist = downloadedPlaylist,
-                    recentlyAdded = recentlyAdded,
-                    nowPlaying = nowPlaying,
-                    navController = navController
-                )
-            }
-            ViewMode.LIST -> {
-                // Si es LIST, mostramos una LazyColumn con el nuevo diseño
-                LibraryListView(
-                    unifiedPlaylistsState = unifiedPlaylistsState,
-                    downloadedPlaylist = downloadedPlaylist,
-                    recentlyAdded = recentlyAdded,
-                    nowPlaying = nowPlaying,
-                    navController = navController
-                )
-            }
+            ViewMode.GRID -> LibraryGridView(
+                unifiedPlaylistsState = unifiedPlaylistsState,
+                downloadedPlaylist = downloadedPlaylist,
+                recentlyAdded = recentlyAdded,
+                nowPlaying = nowPlaying,
+                navController = navController
+            )
+            ViewMode.LIST -> LibraryListView(
+                unifiedPlaylistsState = unifiedPlaylistsState,
+                downloadedPlaylist = downloadedPlaylist,
+                recentlyAdded = recentlyAdded,
+                nowPlaying = nowPlaying,
+                navController = navController
+            )
         }
     }
 }
-
 
 // --- COMPOSABLE PARA LA VISTA DE CUADRÍCULA ---
 @UnstableApi
@@ -145,12 +131,14 @@ private fun LibraryGridView(
     navController: NavController,
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 140.dp), // --> Tamaño de celda más pequeño
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        columns = GridCells.Adaptive(minSize = 130.dp),
+        // ---> ¡CAMBIO AQUÍ! Padding horizontal reducido
+        contentPadding = PaddingValues(horizontal = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp) // <-- Espacio entre columnas
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
+            // ---> ¡CAMBIO AQUÍ! Se elimina el Box con padding negativo
             LibraryTilingBox(navController)
         }
 
@@ -161,15 +149,8 @@ private fun LibraryGridView(
             is LocalResource.Success -> {
                 val playlists = resource.data
                 if (!playlists.isNullOrEmpty()) {
-                    // Ya no mostramos el título "Playlists"
-                    items(
-                        items = playlists,
-                        key = { "grid_${it.id}" }
-                    ) { playlist ->
-                        PlaylistGridItem(
-                            playlist = playlist,
-                            onClick = { onPlaylistClick(playlist, navController) }
-                        )
+                    items(items = playlists, key = { "grid_${it.id}" }) { playlist ->
+                        PlaylistGridItem(playlist = playlist, onClick = { onPlaylistClick(playlist, navController) })
                     }
                 }
             }
@@ -177,30 +158,21 @@ private fun LibraryGridView(
         }
 
         item(span = { GridItemSpan(maxLineSpan) }) {
-            Spacer(modifier = Modifier.padding(top = 8.dp))
-            LibraryItem(
-                state = LibraryItemState(
-                    type = LibraryItemType.DownloadedPlaylist,
-                    data = downloadedPlaylist.data ?: emptyList(),
-                    isLoading = downloadedPlaylist is LocalResource.Loading,
-                ),
-                navController = navController
-            )
-        }
-
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            LibraryItem(
-                state = LibraryItemState(
-                    type = LibraryItemType.RecentlyAdded(playingVideoId = nowPlaying),
-                    data = recentlyAdded.data ?: emptyList(),
-                    isLoading = recentlyAdded is LocalResource.Loading,
-                ),
-                navController = navController
-            )
+            Column {
+                Spacer(modifier = Modifier.height(16.dp))
+                LibraryItem(
+                    state = LibraryItemState(LibraryItemType.DownloadedPlaylist, downloadedPlaylist.data ?: emptyList(), downloadedPlaylist is LocalResource.Loading),
+                    navController = navController
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                LibraryItem(
+                    state = LibraryItemState(LibraryItemType.RecentlyAdded(nowPlaying), recentlyAdded.data ?: emptyList(), recentlyAdded is LocalResource.Loading),
+                    navController = navController
+                )
+            }
         }
     }
 }
-
 
 // --- COMPOSABLE PARA LA VISTA DE LISTA ---
 @UnstableApi
@@ -213,6 +185,7 @@ private fun LibraryListView(
     navController: NavController,
 ) {
     LazyColumn(
+        contentPadding = PaddingValues(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
@@ -226,14 +199,8 @@ private fun LibraryListView(
             is LocalResource.Success -> {
                 val playlists = resource.data
                 if (!playlists.isNullOrEmpty()) {
-                    items(
-                        items = playlists,
-                        key = { "list_${it.id}" }
-                    ) { playlist ->
-                        PlaylistListItem(
-                            playlist = playlist,
-                            onClick = { onPlaylistClick(playlist, navController) }
-                        )
+                    items(items = playlists, key = { "list_${it.id}" }) { playlist ->
+                        PlaylistListItem(playlist = playlist, onClick = { onPlaylistClick(playlist, navController) })
                     }
                 }
             }
@@ -242,21 +209,13 @@ private fun LibraryListView(
 
         item {
             LibraryItem(
-                state = LibraryItemState(
-                    type = LibraryItemType.DownloadedPlaylist,
-                    data = downloadedPlaylist.data ?: emptyList(),
-                    isLoading = downloadedPlaylist is LocalResource.Loading,
-                ),
+                state = LibraryItemState(LibraryItemType.DownloadedPlaylist, downloadedPlaylist.data ?: emptyList(), downloadedPlaylist is LocalResource.Loading),
                 navController = navController
             )
         }
         item {
             LibraryItem(
-                state = LibraryItemState(
-                    type = LibraryItemType.RecentlyAdded(playingVideoId = nowPlaying),
-                    data = recentlyAdded.data ?: emptyList(),
-                    isLoading = recentlyAdded is LocalResource.Loading,
-                ),
+                state = LibraryItemState(LibraryItemType.RecentlyAdded(nowPlaying), recentlyAdded.data ?: emptyList(), recentlyAdded is LocalResource.Loading),
                 navController = navController
             )
         }
@@ -264,22 +223,11 @@ private fun LibraryListView(
 }
 
 // --- LÓGICA DE NAVEGACIÓN (REUTILIZADA) ---
-private fun onPlaylistClick(
-    playlist: com.maxrave.simpmusic.viewModel.UnifiedPlaylist,
-    navController: NavController
-) {
+private fun onPlaylistClick(playlist: com.maxrave.simpmusic.viewModel.UnifiedPlaylist, navController: NavController) {
     when (val original = playlist.originalObject) {
-        is LocalPlaylistEntity -> {
-            navController.navigate(LocalPlaylistDestination(id = original.id))
-        }
-        is PlaylistsResult -> {
-            original.browseId?.let { navController.navigate(PlaylistDestination(playlistId = it, isYourYouTubePlaylist = true)) }
-        }
-        is AlbumEntity -> {
-            original.browseId?.let { navController.navigate(AlbumDestination(browseId = it)) }
-        }
-        is PlaylistEntity -> {
-            navController.navigate(PlaylistDestination(playlistId = original.id))
-        }
+        is LocalPlaylistEntity -> navController.navigate(LocalPlaylistDestination(id = original.id))
+        is PlaylistsResult -> original.browseId?.let { navController.navigate(PlaylistDestination(playlistId = it, isYourYouTubePlaylist = true)) }
+        is AlbumEntity -> original.browseId?.let { navController.navigate(AlbumDestination(browseId = it)) }
+        is PlaylistEntity -> navController.navigate(PlaylistDestination(playlistId = original.id))
     }
 }

@@ -46,10 +46,10 @@ fun LibraryTilingBox(navController: NavController) {
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(bottom = 10.dp, end = 10.dp),
+                .padding(bottom = 10.dp, end = 3.dp),
     ) { number ->
         Box(
-            Modifier.padding(start = 10.dp, top = 10.dp),
+            Modifier.padding(start = 3.dp, top = 10.dp),
         ) {
             LibraryTilingItem(
                 listItem[number],
