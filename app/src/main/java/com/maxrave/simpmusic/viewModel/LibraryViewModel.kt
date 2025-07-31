@@ -14,7 +14,6 @@ import com.maxrave.simpmusic.data.db.entities.PairSongLocalPlaylist
 import com.maxrave.simpmusic.data.db.entities.PlaylistEntity
 import com.maxrave.simpmusic.data.db.entities.SongEntity
 import com.maxrave.simpmusic.data.model.searchResult.playlists.PlaylistsResult
-import com.maxrave.simpmusic.data.type.PlaylistType
 import com.maxrave.simpmusic.data.type.RecentlyType
 import com.maxrave.simpmusic.utils.LocalResource
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
@@ -23,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.launch
@@ -33,6 +33,7 @@ import java.time.LocalDateTime
 class LibraryViewModel(
     private val application: Application,
 ) : BaseViewModel(application) {
+    // ... (Tus otros StateFlows se mantienen igual)
     private val _recentlyAdded: MutableStateFlow<LocalResource<List<RecentlyType>>> =
         MutableStateFlow(LocalResource.Loading())
     val recentlyAdded: StateFlow<LocalResource<List<RecentlyType>>> get() = _recentlyAdded
@@ -45,28 +46,90 @@ class LibraryViewModel(
         MutableStateFlow(LocalResource.Loading())
     val youTubePlaylist: StateFlow<LocalResource<List<PlaylistsResult>>> get() = _youTubePlaylist
 
-    private val _favoritePlaylist: MutableStateFlow<LocalResource<List<PlaylistType>>> =
+    private val _favoritePlaylist: MutableStateFlow<LocalResource<List<com.maxrave.simpmusic.data.type.PlaylistType>>> =
         MutableStateFlow(LocalResource.Loading())
-    val favoritePlaylist: StateFlow<LocalResource<List<PlaylistType>>> get() = _favoritePlaylist
+    val favoritePlaylist: StateFlow<LocalResource<List<com.maxrave.simpmusic.data.type.PlaylistType>>> get() = _favoritePlaylist
 
-    private val _favoritePodcasts: MutableStateFlow<LocalResource<List<PlaylistType>>> =
+    // ... (Tus otros StateFlows como favoritePodcasts, downloadedPlaylist, listCanvasSong se mantienen)
+    private val _favoritePodcasts: MutableStateFlow<LocalResource<List<com.maxrave.simpmusic.data.type.PlaylistType>>> =
         MutableStateFlow(LocalResource.Loading())
-    val favoritePodcasts: StateFlow<LocalResource<List<PlaylistType>>> get() = _favoritePodcasts
+    val favoritePodcasts: StateFlow<LocalResource<List<com.maxrave.simpmusic.data.type.PlaylistType>>> get() = _favoritePodcasts
 
-    private val _downloadedPlaylist: MutableStateFlow<LocalResource<List<PlaylistType>>> =
+    private val _downloadedPlaylist: MutableStateFlow<LocalResource<List<com.maxrave.simpmusic.data.type.PlaylistType>>> =
         MutableStateFlow(LocalResource.Loading())
-    val downloadedPlaylist: StateFlow<LocalResource<List<PlaylistType>>> get() = _downloadedPlaylist
+    val downloadedPlaylist: StateFlow<LocalResource<List<com.maxrave.simpmusic.data.type.PlaylistType>>> get() = _downloadedPlaylist
 
     private val _listCanvasSong: MutableStateFlow<LocalResource<List<SongEntity>>> =
         MutableStateFlow(LocalResource.Loading())
     val listCanvasSong: StateFlow<LocalResource<List<SongEntity>>> get() = _listCanvasSong
 
+    // NUEVO: El StateFlow que contendrá la lista unificada para la UI.
+    private val _unifiedPlaylists: MutableStateFlow<LocalResource<List<UnifiedPlaylist>>> =
+        MutableStateFlow(LocalResource.Loading())
+    val unifiedPlaylists: StateFlow<LocalResource<List<UnifiedPlaylist>>> get() = _unifiedPlaylists
+
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val youtubeLoggedIn = dataStoreManager.loggedIn.mapLatest { it == DataStoreManager.TRUE }
 
-    //    val recentlyAdded = mainRepository.getAllRecentData().map { pagingData ->
-//        pagingData.map { it }
-//    }.cachedIn(viewModelScope)
+    // NUEVO: Bloque init para cargar todo al iniciar el ViewModel.
+    init {
+        // Carga todas las playlists que queremos combinar.
+        getPlaylistFavorite()
+        getYouTubePlaylist()
+        getLocalPlaylist()
+
+        // Inicia el proceso de combinación.
+        combineAllPlaylists()
+
+        // Puedes seguir cargando el resto de datos que no se combinan aquí.
+        getRecentlyAdded()
+        getFavoritePodcasts()
+        getCanvasSong()
+        getDownloadedPlaylist()
+    }
+
+    // NUEVA: La función clave que combina las tres fuentes de playlists.
+    private fun combineAllPlaylists() {
+        viewModelScope.launch {
+            // Usamos 'combine' para escuchar cambios en las tres listas simultáneamente.
+            combine(
+                yourLocalPlaylist,
+                youTubePlaylist,
+                favoritePlaylist
+            ) { localRes, youtubeRes, favoriteRes ->
+                // Este bloque se ejecutará cada vez que cualquiera de las tres listas cambie.
+
+                // Primero, comprobamos si todas las fuentes están todavía cargando.
+                if (localRes is LocalResource.Loading || youtubeRes is LocalResource.Loading || favoriteRes is LocalResource.Loading) {
+                    return@combine LocalResource.Loading()
+                }
+
+                // Extraemos los datos si la carga fue exitosa. Si no, usamos una lista vacía.
+                val localData = (localRes as? LocalResource.Success)?.data ?: emptyList()
+                val youtubeData = (youtubeRes as? LocalResource.Success)?.data ?: emptyList()
+                val favoriteData = (favoriteRes as? LocalResource.Success)?.data ?: emptyList()
+
+                // Mapeamos cada lista a nuestro nuevo tipo 'UnifiedPlaylist'.
+                val localPlaylists = localData.map { UnifiedPlaylist.Local(it) }
+                val youtubePlaylists = youtubeData.map { UnifiedPlaylist.YouTube(it) }
+                val favoritePlaylists = favoriteData.map { UnifiedPlaylist.Favorite(it) }
+
+                // Las juntamos todas en una sola lista.
+                val combinedList = (localPlaylists + youtubePlaylists + favoritePlaylists)
+                    // Opcional: Ordena la lista final por título, ignorando mayúsculas/minúsculas.
+                    .sortedBy { it.title.lowercase() }
+
+
+                LocalResource.Success(combinedList)
+
+            }.collectLatest { combinedResource ->
+                // Publicamos la lista combinada (o el estado de carga) en nuestro nuevo StateFlow.
+                _unifiedPlaylists.value = combinedResource
+            }
+        }
+    }
+
 
     fun getRecentlyAdded() {
         viewModelScope.launch {
@@ -90,7 +153,6 @@ class LibraryViewModel(
         _youTubePlaylist.value = LocalResource.Loading()
         viewModelScope.launch {
             mainRepository.getLibraryPlaylist().collect { data ->
-//                    _listYouTubePlaylist.postValue(data?.reversed())
                 _youTubePlaylist.value = LocalResource.Success(data ?: emptyList())
             }
         }
@@ -101,12 +163,12 @@ class LibraryViewModel(
     fun getPlaylistFavorite() {
         viewModelScope.launch {
             mainRepository.getLikedAlbums().collect { album ->
-                val temp: MutableList<PlaylistType> = mutableListOf()
+                val temp: MutableList<com.maxrave.simpmusic.data.type.PlaylistType> = mutableListOf()
                 temp.addAll(album)
                 mainRepository.getLikedPlaylists().collect { playlist ->
                     temp.addAll(playlist)
                     val sortedList =
-                        temp.sortedWith<PlaylistType>(
+                        temp.sortedWith<com.maxrave.simpmusic.data.type.PlaylistType>(
                             Comparator { p0, p1 ->
                                 val timeP0: LocalDateTime? =
                                     when (p0) {
@@ -129,9 +191,9 @@ class LibraryViewModel(
                                         1
                                     }
                                 }
-                                timeP0.compareTo(timeP1) // Sort in descending order by inLibrary time
+                                timeP0.compareTo(timeP1)
                             },
-                        )
+                        ).reversed() // Spotify suele mostrar los más recientes primero
                     _favoritePlaylist.value = LocalResource.Success(sortedList)
                 }
             }
@@ -160,7 +222,6 @@ class LibraryViewModel(
         _yourLocalPlaylist.value = LocalResource.Loading()
         viewModelScope.launch {
             mainRepository.getAllLocalPlaylists().collect { values ->
-//                    _listLocalPlaylist.postValue(values)
                 _yourLocalPlaylist.value = LocalResource.Success(values.reversed())
             }
         }
@@ -174,20 +235,26 @@ class LibraryViewModel(
         }
     }
 
+    fun createPlaylist(title: String) {
+        viewModelScope.launch {
+            val localPlaylistEntity = LocalPlaylistEntity(title = title)
+            mainRepository.insertLocalPlaylist(localPlaylistEntity)
+            // No necesitamos hacer nada más aquí.
+            // Al llamar a getLocalPlaylist, se actualizará el flow `_yourLocalPlaylist`,
+            // y la función `combineAllPlaylists` se ejecutará automáticamente para
+            // actualizar la lista unificada. ¡Es la magia de la programación reactiva!
+            getLocalPlaylist()
+        }
+    }
+
+    // ... (El resto de tus funciones como updateLikeStatus, updateLocalPlaylistTracks, etc. se mantienen igual)
+    // ...
     fun updateLikeStatus(
         videoId: String,
         likeStatus: Int,
     ) {
         viewModelScope.launch {
             mainRepository.updateLikeStatus(likeStatus = likeStatus, videoId = videoId)
-        }
-    }
-
-    fun createPlaylist(title: String) {
-        viewModelScope.launch {
-            val localPlaylistEntity = LocalPlaylistEntity(title = title)
-            mainRepository.insertLocalPlaylist(localPlaylistEntity)
-            getLocalPlaylist()
         }
     }
 
